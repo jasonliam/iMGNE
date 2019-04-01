@@ -12,14 +12,16 @@ from audiotsm.io.wav import WavReader, WavWriter
 
 class DataGenerator:
 
-    def __init__(self, fpaths, chunk_size, window_size, window_overlap, batch_size=1, 
-                 wav_format="PCM16", vocoder=False, verbose=False):
+    def __init__(self, fpaths, chunk_size, window_size, window_overlap,
+                 batch_size=1, undersample=1, wav_format="PCM16",
+                 vocoder=False, verbose=False):
 
         self.fpaths = fpaths
         self.chunk_size = chunk_size
         self.window_size = window_size
         self.window_overlap = window_overlap  # sample rate at which to do STFT
         self.batch_size = batch_size
+        self.undersample=undersample  # average every n STFT samples
         self.wav_format = wav_format
         
         self.use_phase_vocoder = vocoder
@@ -129,6 +131,10 @@ class DataGenerator:
 
             print("Completed STFT, data shape: {}".format(zxx_c.shape))
 
+            # do undersampling by averaging every n STFT samples
+            zxx_c = np.average(
+                zxx_c.reshape(zxx_c.shape[0], -1, self.undersample), axis=2)
+
             # break out and concat real and imaginary parts
             zxx = np.vstack((np.real(zxx_c), np.imag(zxx_c)))
 
@@ -170,6 +176,9 @@ class DataGenerator:
 
         # reassemble real and imaginary parts of the output
         out = temp[:int(temp.shape[0]/2)] + 1j * temp[int(temp.shape[0]/2):]
+
+        # upsample to original STFT resolution
+        out = np.repeat(out, self.undersample, axis=1)
 
         # do iSTFT
         t, x = istft(out, fs=self.fs, #window='blackmanharris',
