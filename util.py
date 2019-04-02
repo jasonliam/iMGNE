@@ -10,6 +10,7 @@ import torch.nn as nn
 from audiotsm import phasevocoder
 from audiotsm.io.wav import WavReader, WavWriter
 import librosa
+import lws
 
 class DataGenerator:
 
@@ -54,54 +55,59 @@ class DataGenerator:
 
     def _load_stft_vocoded(self):
         
+        lws_proc = lws.lws(self.window_size, self.window_overlap, mode='music', perfectrec=True)
+
         for fpath in self.fpaths:
-            with WavReader(fpath) as reader:
-                
-                sr = reader._reader.getframerate()
-                print("Loading file: {}, sample rate: {}".format(fpath, sr))
-                                       
-                # filename for audiotsm to write stft'd data to
-                stft_fname = ''.join(fpath.split('.')[:-1]) + '_stft.npy'
-                
-                tsm = phasevocoder(reader.channels, 
-                                   frame_length=self.window_size, 
-                                   analysis_hop=self.window_overlap) 
-                                   #synthesis_hop= self.window_size // 4)               
-                
-                tsm.run(reader, None, stft_fname=stft_fname, stft_only=True, verbose=self.verbose)        
 
-                zxx = np.real(np.load(stft_fname))
-                print("Loaded STFT data from {}, with shape: {}".format(stft_fname, zxx.shape))
+            x, fs = librosa.core.load(fpath, sr=None, mono=True)
+            print("Loading file: {}, sample rate: {}".format(fpath, fs))
+            print(x.shape, fs, x.shape[0] / float(fs), x.dtype, x.min(), x.max())  
 
-                # break out and concat real and imaginary parts
-                # zxx = np.vstack((np.real(zxx_c), np.imag(zxx_c)))
+            X = lws_proc.stft(x)
 
-                # make raw train and teacher sets from STFT'd data
-                xt_padding = np.zeros((zxx.shape[0], 1))
-                X = np.hstack((xt_padding, zxx)).transpose()
-                T = np.hstack((zxx, xt_padding)).transpose()
-                assert (X[1:] == T[:-1]).all()
+            # Extract magnitude and phase spectra
+            X_mag = np.abs(X)
+            X_phs = np.angle(X)
 
-                # pad X and T at the end to the nearest multiple of batch_size*chunk_size (0 as silence)
-                max_pad_len = self.batch_size * self.chunk_size
-                X = np.vstack(
-                    (X, np.zeros((max_pad_len - X.shape[0] % max_pad_len, X.shape[1]))))
-                T = np.vstack(
-                    (T, np.zeros((max_pad_len - T.shape[0] % max_pad_len, T.shape[1]))))
+            # Unwrap phase
+            X_phs_unwrapped = np.unwrap(X_phs, axis=0)
 
-                # make minibatchs
-                X = torch.FloatTensor(X).view(
-                    self.batch_size, -1, zxx.shape[0]).transpose(0, 1)
-                T = torch.FloatTensor(T).view(
-                    self.batch_size, -1, zxx.shape[0]).transpose(0, 1)
+            # Find "instantaneous frequency" representation (delta phase)
+            X_delta_phs = np.diff(X_phs_unwrapped, axis=0)
+            X_delta_phs_padded = np.pad(X_delta_phs, [[1, 0], [0, 0]], 'constant')
 
-                print("Data processing complete, X shape: {}".format(X.shape))
-                print()
+            #stacked = np.stack([X_mag, X_delta_phs_padded], axis=2)
+            #X = np.pad(zxx, [[0,1],[0,1],[0,0]], 'constant')
+            #T = np.pad(zxx, [[1,0],[1,0],[0,0]], 'constant')
+            
+            zxx = np.vstack((X_mag.T, X_delta_phs_padded.T))            
+            
+            # make raw train and teacher sets from STFT'd data
+            xt_padding = np.zeros((zxx.shape[0], 1))
+            X = np.hstack((xt_padding, zxx)).transpose()
+            T = np.hstack((zxx, xt_padding)).transpose()
+            assert (X[1:] == T[:-1]).all()
 
-                self.X_list += [X]
-                self.T_list += [T]                
+            # pad X and T at the end to the nearest multiple of batch_size*chunk_size (0 as silence)
+            max_pad_len = self.batch_size * self.chunk_size
+            X = np.vstack(
+                (X, np.zeros((max_pad_len - X.shape[0] % max_pad_len, X.shape[1]))))
+            T = np.vstack(
+                (T, np.zeros((max_pad_len - T.shape[0] % max_pad_len, T.shape[1]))))
+            
+            # make minibatchs
+            X = torch.FloatTensor(X).view(
+                self.batch_size, -1, zxx.shape[0]).transpose(0, 1)
+            T = torch.FloatTensor(T).view(
+                self.batch_size, -1, zxx.shape[0]).transpose(0, 1)
+            
+            print("Data processing complete, X shape: {}".format(X.shape))
+            print()
 
-        
+            self.X_list += [X]
+            self.T_list += [T]                
+
+
     def _load_stft(self):
         for fpath in self.fpaths:
 
