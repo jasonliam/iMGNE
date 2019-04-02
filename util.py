@@ -16,7 +16,7 @@ import lws
 class DataGenerator:
 
     def __init__(self, fpaths, chunk_size, window_size, window_overlap,
-                 batch_size=1, downsample=1, sr=8000, wav_format="PCM16",
+                 batch_size=1, downsample=1, sr=8000, #wav_format="PCM16",
                  vocoder=False, verbose=False):
 
         self.fpaths = fpaths
@@ -26,7 +26,7 @@ class DataGenerator:
         self.batch_size = batch_size
         self.sr = sr
         self.downsample = downsample  # average every n STFT samples
-        self.wav_format = wav_format
+#         self.wav_format = wav_format
 
         self.use_phase_vocoder = vocoder
         self.verbose = verbose
@@ -112,31 +112,15 @@ class DataGenerator:
         for i, fpath in enumerate(self.fpaths):
 
             # load wav file into 1-D ndarray
-            # sr, data = wavfile.read(fpath)
-            # if self.sr:
-            #     assert self.sr == sr  # do not allow samples w/different sr
-            # self.sr = sr
-            data, sr = librosa.load(fpath, sr=self.sr)
-
-            # print("Loading file: {}, sample rate: {}".format(fpath, sr))
-
-            # normalize inputs to (-1,1) -- using tanh for activation
-            if self.wav_format == "PCM16":  # signed 16-bit integer encoding
-                data = data / 2**15
-            elif self.wav_format == "PCM32":  # signed 32-bit integer encoding
-                data = data / 2**31
-            elif self.wav_format == "FLOAT32":  # signed 32-bit float encoding
-                pass  # Assume normalized input (if not, training is screwed)
-            else:
-                raise Exception('Unknown wav format')
-            assert data.min() >= -1.0 and data.max() <= 1.0  # enforce input range
+            data, sr = librosa.core.load(fpath, sr=None, mono=True)
+            if sr != self.sr:
+                data = librosa.core.resample(data, sr, self.sr)
+                sr = self.sr
 
             # Do STFT (can't STFT on concat'd music: takes too much ram on long inputs)
             _, _, zxx_c = stft(
                 data, fs=sr,  # window='blackmanharris',
                 nperseg=self.window_size, noverlap=self.window_overlap)
-
-            # print("Completed STFT, data shape: {}".format(zxx_c.shape))
 
             # do undersampling by averaging every n STFT samples
             zxx_c = np.average(
