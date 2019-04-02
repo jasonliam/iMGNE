@@ -2,7 +2,7 @@ import os
 import numpy as np
 from itertools import tee
 from scipy.io import wavfile
-import wave # for phase vocoder
+import wave  # for phase vocoder
 from scipy.signal import stft, istft
 import torch
 import torchvision
@@ -11,6 +11,7 @@ from audiotsm import phasevocoder
 from audiotsm.io.wav import WavReader, WavWriter
 import librosa
 import lws
+
 
 class DataGenerator:
 
@@ -24,9 +25,9 @@ class DataGenerator:
         self.window_overlap = window_overlap  # sample rate at which to do STFT
         self.batch_size = batch_size
         self.sr = sr
-        self.downsample=downsample  # average every n STFT samples
+        self.downsample = downsample  # average every n STFT samples
         self.wav_format = wav_format
-        
+
         self.use_phase_vocoder = vocoder
         self.verbose = verbose
 
@@ -38,30 +39,29 @@ class DataGenerator:
 
         self._load()  # load and preprocess all songs in fpaths
 
-       
     def __len__(self):
         return len(self.fpaths)
 
-    
     def __getitem__(self, i):
         return self.fpaths[self.idx[i]], self.X_list[self.idx[i]], self.T_list[self.idx[i]]
 
-    
-    def _load(self):     
+    def _load(self):
         if self.use_phase_vocoder:
             self._load_stft_vocoded()
         else:
             self._load_stft()
 
     def _load_stft_vocoded(self):
-        
-        lws_proc = lws.lws(self.window_size, self.window_overlap, mode='music', perfectrec=True)
+
+        lws_proc = lws.lws(self.window_size, self.window_overlap,
+                           mode='music', perfectrec=True)
 
         for fpath in self.fpaths:
 
             x, fs = librosa.core.load(fpath, sr=None, mono=True)
             print("Loading file: {}, sample rate: {}".format(fpath, fs))
-            print(x.shape, fs, x.shape[0] / float(fs), x.dtype, x.min(), x.max())  
+            print(x.shape, fs, x.shape[0] /
+                  float(fs), x.dtype, x.min(), x.max())
 
             X = lws_proc.stft(x)
 
@@ -74,14 +74,15 @@ class DataGenerator:
 
             # Find "instantaneous frequency" representation (delta phase)
             X_delta_phs = np.diff(X_phs_unwrapped, axis=0)
-            X_delta_phs_padded = np.pad(X_delta_phs, [[1, 0], [0, 0]], 'constant')
+            X_delta_phs_padded = np.pad(
+                X_delta_phs, [[1, 0], [0, 0]], 'constant')
 
             #stacked = np.stack([X_mag, X_delta_phs_padded], axis=2)
             #X = np.pad(zxx, [[0,1],[0,1],[0,0]], 'constant')
             #T = np.pad(zxx, [[1,0],[1,0],[0,0]], 'constant')
-            
-            zxx = np.vstack((X_mag.T, X_delta_phs_padded.T))            
-            
+
+            zxx = np.vstack((X_mag.T, X_delta_phs_padded.T))
+
             # make raw train and teacher sets from STFT'd data
             xt_padding = np.zeros((zxx.shape[0], 1))
             X = np.hstack((xt_padding, zxx)).transpose()
@@ -94,22 +95,21 @@ class DataGenerator:
                 (X, np.zeros((max_pad_len - X.shape[0] % max_pad_len, X.shape[1]))))
             T = np.vstack(
                 (T, np.zeros((max_pad_len - T.shape[0] % max_pad_len, T.shape[1]))))
-            
+
             # make minibatchs
             X = torch.FloatTensor(X).view(
                 self.batch_size, -1, zxx.shape[0]).transpose(0, 1)
             T = torch.FloatTensor(T).view(
                 self.batch_size, -1, zxx.shape[0]).transpose(0, 1)
-            
+
             print("Data processing complete, X shape: {}".format(X.shape))
             print()
 
             self.X_list += [X]
-            self.T_list += [T]                
-
+            self.T_list += [T]
 
     def _load_stft(self):
-        for fpath in self.fpaths:
+        for i, fpath in enumerate(self.fpaths):
 
             # load wav file into 1-D ndarray
             # sr, data = wavfile.read(fpath)
@@ -118,8 +118,7 @@ class DataGenerator:
             # self.sr = sr
             data, sr = librosa.load(fpath, sr=self.sr)
 
-
-            print("Loading file: {}, sample rate: {}".format(fpath, sr))
+            # print("Loading file: {}, sample rate: {}".format(fpath, sr))
 
             # normalize inputs to (-1,1) -- using tanh for activation
             if self.wav_format == "PCM16":  # signed 16-bit integer encoding
@@ -134,10 +133,10 @@ class DataGenerator:
 
             # Do STFT (can't STFT on concat'd music: takes too much ram on long inputs)
             _, _, zxx_c = stft(
-                data, fs=sr, #window='blackmanharris',
+                data, fs=sr,  # window='blackmanharris',
                 nperseg=self.window_size, noverlap=self.window_overlap)
 
-            print("Completed STFT, data shape: {}".format(zxx_c.shape))
+            # print("Completed STFT, data shape: {}".format(zxx_c.shape))
 
             # do undersampling by averaging every n STFT samples
             zxx_c = np.average(
@@ -165,12 +164,15 @@ class DataGenerator:
             T = torch.FloatTensor(T).view(
                 self.batch_size, -1, zxx.shape[0]).transpose(0, 1)
 
-            print("Data processing complete, X shape: {}".format(X.shape))
-            print()
+            # print("Data processing complete, X shape: {}".format(X.shape))
+            stat_str = "File {}/{}, sr={}, zxx_c.shape={}, X.shape={}".format(
+                i + 1, len(self.fpaths), sr, zxx_c.shape, X.shape)
+            print(stat_str, end='\r')
 
             self.X_list += [X]
             self.T_list += [T]
-            
+        print()
+
     def randomize_idx(self):
         self.idx = np.random.permutation(self.idx)
 
@@ -189,7 +191,7 @@ class DataGenerator:
         out = np.repeat(out, self.downsample, axis=1)
 
         # do iSTFT
-        t, x = istft(out, fs=self.sr, #window='blackmanharris',
+        t, x = istft(out, fs=self.sr,  # window='blackmanharris',
                      nperseg=self.window_size, noverlap=self.window_overlap)
 
         # TODO: normalize output?
