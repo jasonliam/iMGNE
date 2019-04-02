@@ -138,7 +138,7 @@ class LSTMCNN(LSTMBasic):
         self.max_pool2 = nn.MaxPool1d(kernel_size=2, stride=2)
 
         # LSTM layer
-        self.lstm_input_dim = int(self.input_dim/2/2/2/2/2/2*128)
+        self.lstm_input_dim = int(self.input_dim/2/2/2/2/2/2/2*128)
         self.lstm = nn.LSTM(self.lstm_input_dim,
                             hidden_dim, num_layers=num_layers)
 
