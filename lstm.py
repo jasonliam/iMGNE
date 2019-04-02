@@ -81,7 +81,8 @@ class LSTMBasic(nn.Module):
 class LSTMFC(LSTMBasic):
 
     def __init__(self, input_dim, fc_dim, hidden_dim, num_layers=1, batch_size=1, dropout_p=0.5):
-        super(LSTMFC, self).__init__(input_dim, hidden_dim, num_layers, batch_size)
+        super(LSTMFC, self).__init__(
+            input_dim, hidden_dim, num_layers, batch_size)
 
         self.dropout_p = dropout_p
 
@@ -116,12 +117,13 @@ class LSTMFC(LSTMBasic):
 class LSTMCNN(LSTMBasic):
 
     def __init__(self, input_dim, hidden_dim, num_layers=1, batch_size=1, decoder="vanilla"):
-        super(LSTMCNN, self).__init__(input_dim, hidden_dim, num_layers, batch_size)
-        
+        super(LSTMCNN, self).__init__(
+            input_dim, hidden_dim, num_layers, batch_size)
+
         self.decoder = decoder
 
         # CNN layers for feature extraction
-        self.conv1 = nn.Conv1d(1, 16, kernel_size=7, padding=3)
+        self.conv1 = nn.Conv1d(2, 16, kernel_size=7, padding=3)
         self.bn1 = nn.BatchNorm1d(16)
         self.max_pool1 = nn.MaxPool1d(kernel_size=2, stride=2)
 
@@ -139,16 +141,20 @@ class LSTMCNN(LSTMBasic):
         self.lstm_input_dim = int(self.input_dim/2/2/2/2/2/2*128)
         self.lstm = nn.LSTM(self.lstm_input_dim,
                             hidden_dim, num_layers=num_layers)
-        
+
         # CNN layers for decoding
         if self.decoder == "cnn":
             self.lstm_decode = nn.Linear(hidden_dim, self.lstm_input_dim)
             self.pad1 = nn.Upsample(scale_factor=2)
             self.pad2 = nn.Upsample(scale_factor=2)
-            self.conv5_t = nn.ConvTranspose1d(128, 128, kernel_size=3, stride=2, padding=1, output_padding=1)
-            self.conv4_t = nn.ConvTranspose1d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
-            self.conv3_t = nn.ConvTranspose1d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
-            self.conv2_t = nn.ConvTranspose1d(32, 16, kernel_size=3, stride=2, padding=1, output_padding=1)
+            self.conv5_t = nn.ConvTranspose1d(
+                128, 128, kernel_size=3, stride=2, padding=1, output_padding=1)
+            self.conv4_t = nn.ConvTranspose1d(
+                128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
+            self.conv3_t = nn.ConvTranspose1d(
+                64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
+            self.conv2_t = nn.ConvTranspose1d(
+                32, 16, kernel_size=3, stride=2, padding=1, output_padding=1)
             self.conv1_t = nn.ConvTranspose1d(16, 1, kernel_size=7, padding=3)
             self.bn5_t = nn.BatchNorm1d(128)
             self.bn4_t = nn.BatchNorm1d(64)
@@ -163,7 +169,8 @@ class LSTMCNN(LSTMBasic):
         self.lstm.flatten_parameters()
 
         # CNN feature extraction
-        x = chunk.view(-1, 1, self.input_dim) # concat all minibatches to fit Conv1d's shape req
+        # concat all minibatches to fit Conv1d's shape req
+        x = chunk.view(-1, 2, self.input_dim)
         x = F.relu(self.bn1(self.conv1(x)))
         x = self.max_pool1(x)
         x = F.relu(self.bn2(self.conv2(x)))
@@ -171,15 +178,17 @@ class LSTMCNN(LSTMBasic):
         x = F.relu(self.bn4(self.conv4(x)))
         x = F.relu(self.bn5(self.conv5(x)))
         x = self.max_pool2(x)
-        x = x.view(chunk.shape[0], chunk.shape[1], -1) # break out the minibatches again for LSTM 
+        # break out the minibatches again for LSTM
+        x = x.view(chunk.shape[0], chunk.shape[1], -1)
 
         # run the LSTM, get outputs and updates (hidden states i.e. recurrent input, and cell states)
-        output, self.curr_state = self.lstm(x, prev_state) 
-        
+        output, self.curr_state = self.lstm(x, prev_state)
+
         # decode LSTM outputs back to input space
         if self.decoder == "cnn":
             output = self.lstm_decode(output)
-            output = output.view(-1, 128, self.hidden_dim//128) # concat minibatches to make space for conv_t
+            # concat minibatches to make space for conv_t
+            output = output.view(-1, 128, self.hidden_dim//128)
             output = self.pad1(output)
             output = F.relu(self.bn5_t(self.conv5_t(output)))
             output = F.relu(self.bn4_t(self.conv4_t(output)))
@@ -187,8 +196,9 @@ class LSTMCNN(LSTMBasic):
             output = F.relu(self.bn2_t(self.conv2_t(output)))
             output = self.pad2(output)
             output = self.conv1_t(output)
-            output = output.view(chunk.shape[0], chunk.shape[1], -1) # break out minibatches again 
-        elif self.decoder == "2fc": 
+            # break out minibatches again
+            output = output.view(chunk.shape[0], chunk.shape[1], -1)
+        elif self.decoder == "2fc":
             output = F.tanh(self.decode1(output))
             output = self.decode2(output)
         else:
