@@ -149,8 +149,8 @@ class DataGenerator:
                 self.batch_size, -1, zxx.shape[0]).transpose(0, 1)
 
             # print("Data processing complete, X shape: {}".format(X.shape))
-            stat_str = "File {}/{}, sr={}, zxx_c.shape={}, X.shape={}".format(
-                i + 1, len(self.fpaths), sr, zxx_c.shape, X.shape)
+            stat_str = "{} {}/{}, sr={}, zxx_c.shape={}, X.shape={}".format(
+                fpath, i + 1, len(self.fpaths), sr, zxx_c.shape, X.shape)
             print(stat_str, end='\r')
 
             self.X_list += [X]
