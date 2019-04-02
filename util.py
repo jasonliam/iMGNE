@@ -9,11 +9,12 @@ import torchvision
 import torch.nn as nn
 from audiotsm import phasevocoder
 from audiotsm.io.wav import WavReader, WavWriter
+import librosa
 
 class DataGenerator:
 
     def __init__(self, fpaths, chunk_size, window_size, window_overlap,
-                 batch_size=1, undersample=1, wav_format="PCM16",
+                 batch_size=1, downsample=1, sr=8000, wav_format="PCM16",
                  vocoder=False, verbose=False):
 
         self.fpaths = fpaths
@@ -21,13 +22,12 @@ class DataGenerator:
         self.window_size = window_size
         self.window_overlap = window_overlap  # sample rate at which to do STFT
         self.batch_size = batch_size
-        self.undersample=undersample  # average every n STFT samples
+        self.sr = sr
+        self.downsample=downsample  # average every n STFT samples
         self.wav_format = wav_format
         
         self.use_phase_vocoder = vocoder
         self.verbose = verbose
-        
-        self.fs = None  # sampling frequency of wav files; to be detected at loading
 
         self.X_list = []  # list of FloatTensors representing each song in frequency space
         self.T_list = []
@@ -57,8 +57,8 @@ class DataGenerator:
         for fpath in self.fpaths:
             with WavReader(fpath) as reader:
                 
-                fs = reader._reader.getframerate()
-                print("Loading file: {}, sample rate: {}".format(fpath, fs))
+                sr = reader._reader.getframerate()
+                print("Loading file: {}, sample rate: {}".format(fpath, sr))
                                        
                 # filename for audiotsm to write stft'd data to
                 stft_fname = ''.join(fpath.split('.')[:-1]) + '_stft.npy'
@@ -106,12 +106,14 @@ class DataGenerator:
         for fpath in self.fpaths:
 
             # load wav file into 1-D ndarray
-            fs, data = wavfile.read(fpath)
-            if self.fs:
-                assert self.fs == fs  # do not allow samples w/different fs
-            self.fs = fs
+            # sr, data = wavfile.read(fpath)
+            # if self.sr:
+            #     assert self.sr == sr  # do not allow samples w/different sr
+            # self.sr = sr
+            data, sr = librosa.load(fpath, sr=self.sr)
 
-            print("Loading file: {}, sample rate: {}".format(fpath, fs))
+
+            print("Loading file: {}, sample rate: {}".format(fpath, sr))
 
             # normalize inputs to (-1,1) -- using tanh for activation
             if self.wav_format == "PCM16":  # signed 16-bit integer encoding
@@ -126,14 +128,14 @@ class DataGenerator:
 
             # Do STFT (can't STFT on concat'd music: takes too much ram on long inputs)
             _, _, zxx_c = stft(
-                data, fs=fs, #window='blackmanharris',
+                data, fs=sr, #window='blackmanharris',
                 nperseg=self.window_size, noverlap=self.window_overlap)
 
             print("Completed STFT, data shape: {}".format(zxx_c.shape))
 
             # do undersampling by averaging every n STFT samples
             zxx_c = np.average(
-                zxx_c.reshape(zxx_c.shape[0], -1, self.undersample), axis=2)
+                zxx_c.reshape(zxx_c.shape[0], -1, self.downsample), axis=2)
 
             # break out and concat real and imaginary parts
             zxx = np.vstack((np.real(zxx_c), np.imag(zxx_c)))
@@ -178,10 +180,10 @@ class DataGenerator:
         out = temp[:int(temp.shape[0]/2)] + 1j * temp[int(temp.shape[0]/2):]
 
         # upsample to original STFT resolution
-        out = np.repeat(out, self.undersample, axis=1)
+        out = np.repeat(out, self.downsample, axis=1)
 
         # do iSTFT
-        t, x = istft(out, fs=self.fs, #window='blackmanharris',
+        t, x = istft(out, fs=self.sr, #window='blackmanharris',
                      nperseg=self.window_size, noverlap=self.window_overlap)
 
         # TODO: normalize output?
