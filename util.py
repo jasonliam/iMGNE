@@ -56,12 +56,15 @@ class DataGenerator:
         self.lws_proc = lws.lws(self.window_size, self.window_overlap,
                                 mode='music', perfectrec=True)
 
-        for fpath in self.fpaths:
+        for i, fpath in enumerate(self.fpaths):
 
             x, fs = librosa.core.load(fpath, sr=None, mono=True)
-            print("Loading file: {}, sample rate: {}".format(fpath, fs))
-            print(x.shape, fs, x.shape[0] /
-                  float(fs), x.dtype, x.min(), x.max())
+            if fs != self.sr:
+                x = librosa.core.resample(x, fs, self.sr)
+                fs = self.sr
+#             print("Loading file: {}, sample rate: {}".format(fpath, fs))
+#             print(x.shape, fs, x.shape[0] /
+#                   float(fs), x.dtype, x.min(), x.max())
 
             X = self.lws_proc.stft(x)
 
@@ -104,11 +107,16 @@ class DataGenerator:
             T = torch.FloatTensor(T).view(
                 self.batch_size, -1, zxx.shape[0]).transpose(0, 1)
 
-            print("Data processing complete, X shape: {}".format(X.shape))
-            print()
+#             print("Data processing complete, X shape: {}".format(X.shape))
+            stat_str = "{} {}/{}, sr={}, X.shape={}".format(
+                fpath, i + 1, len(self.fpaths), fs, X.shape)
+            print(stat_str, end='\r')
+            
 
             self.X_list += [X]
             self.T_list += [T]
+
+        print()
 
     def _load_stft(self):
         for i, fpath in enumerate(self.fpaths):
