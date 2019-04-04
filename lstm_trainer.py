@@ -28,7 +28,8 @@ from datetime import datetime
 
 class LSTMTrainer:
 
-    def __init__(self, model, criterion, optimizer, device=None):
+    def __init__(self, model, criterion, optimizer, device=None, 
+                 model_prefix=None, loss_prefix=None):
 
         # Set computing device, detect if not passed in
         if not device:
@@ -47,6 +48,9 @@ class LSTMTrainer:
         self.epochs_trained = 0
 
         self.m = model.module if isinstance(model, nn.DataParallel) else model
+        
+        self.model_prefix = model_prefix if model_prefix else ""
+        self.loss_prefix = loss_prefix if loss_prefix else ""
 
     def train(self, train_gen, val_gen, n_epochs, shuffle=True,
               dump_model=False, dump_epochs=50, dump_loss=False):
@@ -143,13 +147,13 @@ class LSTMTrainer:
 
             # dump model
             if dump_model and self.epochs_trained % dump_epochs == 0:
-                model_file = "models/cs{}_h{}_e{}.ckpt".format(
+                model_file = "models/{}cs{}_h{}_e{}.ckpt".format(self.model_prefix, 
                     train_gen.chunk_size, self.m.hidden_dim, self.epochs_trained)
                 torch.save(self.m.state_dict(), model_file)
 
             # dump loss on every epoch
             if dump_loss:
-                losses_file = "losses/cs{}_h{}_e{}.loss.pkl".format(
+                losses_file = "losses/{}cs{}_h{}_e{}.loss.pkl".format(self.loss_prefix, 
                     train_gen.chunk_size, self.m.hidden_dim, self.epochs_trained)
                 pickle.dump((epoch_train_loss, epoch_val_loss),
                             open(losses_file, 'wb'))
