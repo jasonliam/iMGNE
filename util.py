@@ -53,8 +53,8 @@ class DataGenerator:
 
     def _load_stft_vocoded(self):
 
-        lws_proc = lws.lws(self.window_size, self.window_overlap,
-                           mode='music', perfectrec=True)
+        self.lws_proc = lws.lws(self.window_size, self.window_overlap,
+                                mode='music', perfectrec=True)
 
         for fpath in self.fpaths:
 
@@ -63,7 +63,7 @@ class DataGenerator:
             print(x.shape, fs, x.shape[0] /
                   float(fs), x.dtype, x.min(), x.max())
 
-            X = lws_proc.stft(x)
+            X = self.lws_proc.stft(x)
 
             # Extract magnitude and phase spectra
             X_mag = np.abs(X)
@@ -80,7 +80,6 @@ class DataGenerator:
             #stacked = np.stack([X_mag, X_delta_phs_padded], axis=2)
             #X = np.pad(zxx, [[0,1],[0,1],[0,0]], 'constant')
             #T = np.pad(zxx, [[1,0],[1,0],[0,0]], 'constant')
-
             zxx = np.vstack((X_mag.T, X_delta_phs_padded.T))
 
             # make raw train and teacher sets from STFT'd data
@@ -165,19 +164,29 @@ class DataGenerator:
 
         if isinstance(X, torch.Tensor):
             X = X.cpu().numpy()
+        
+        temp = X.reshape(-1, X.shape[2])
 
-        temp = X.reshape(-1, X.shape[2]).transpose()
+        print(temp.shape)
+        if self.use_phase_vocoder:
+            mag, delta_phs = temp[:, :temp.shape[1]//2], temp[:, temp.shape[1]//2:]
+            phs_unwrapped = np.cumsum(delta_phs, axis=0)
+            phs = (phs_unwrapped + np.pi) % (2 * np.pi ) - np.pi
+            X = mag * np.exp(1j * phs)            
+            x = self.lws_proc.istft(X)     
+            return x
+            
+        else:
+  
+            # reassemble real and imaginary parts of the output
+            out = temp[:int(temp.shape[0]/2)] + 1j * temp[int(temp.shape[0]/2):]
 
-        # reassemble real and imaginary parts of the output
-        out = temp[:int(temp.shape[0]/2)] + 1j * temp[int(temp.shape[0]/2):]
+            # upsample to original STFT resolution
+            out = np.repeat(out, self.downsample, axis=1)
 
-        # upsample to original STFT resolution
-        out = np.repeat(out, self.downsample, axis=1)
+            # do iSTFT
+            t, x = istft(out, fs=self.sr,  # window='blackmanharris',
+                         nperseg=self.window_size, noverlap=self.window_overlap)
 
-        # do iSTFT
-        t, x = istft(out, fs=self.sr,  # window='blackmanharris',
-                     nperseg=self.window_size, noverlap=self.window_overlap)
-
-        # TODO: normalize output?
-
-        return t, x
+            # TODO: normalize output?
+            return t, x
