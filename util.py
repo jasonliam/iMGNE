@@ -81,7 +81,10 @@ class DataGenerator:
             #X = np.pad(zxx, [[0,1],[0,1],[0,0]], 'constant')
             #T = np.pad(zxx, [[1,0],[1,0],[0,0]], 'constant')
             zxx = np.vstack((X_mag.T, X_delta_phs_padded.T))
-
+            
+            # HOT FIX 
+            zxx = zxx[:self.window_size, :]
+            
             # make raw train and teacher sets from STFT'd data
             xt_padding = np.zeros((zxx.shape[0], 1))
             X = np.hstack((xt_padding, zxx)).transpose()
@@ -167,12 +170,15 @@ class DataGenerator:
         
         temp = X.reshape(-1, X.shape[2])
 
-        print(temp.shape)
         if self.use_phase_vocoder:
             mag, delta_phs = temp[:, :temp.shape[1]//2], temp[:, temp.shape[1]//2:]
             phs_unwrapped = np.cumsum(delta_phs, axis=0)
             phs = (phs_unwrapped + np.pi) % (2 * np.pi ) - np.pi
-            X = mag * np.exp(1j * phs)            
+            X = mag * np.exp(1j * phs)  
+
+            if X.shape[1]%2 != 1:
+                X = np.pad(X, [[0,0],[0,1]], 'constant')
+                
             x = self.lws_proc.istft(X)     
             return x
             
