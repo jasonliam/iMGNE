@@ -116,11 +116,12 @@ class LSTMFC(LSTMBasic):
 # CNN feature extraction before LSTM
 class LSTMCNN(LSTMBasic):
 
-    def __init__(self, input_dim, hidden_dim, num_layers=1, batch_size=1, decoder="vanilla"):
+    def __init__(self, input_dim, hidden_dim, num_layers=1, batch_size=1, decoder="vanilla", normalize=False):
         super(LSTMCNN, self).__init__(
             input_dim, hidden_dim, num_layers, batch_size)
 
         self.decoder = decoder
+        self.normalize = normalize
 
         # CNN layers for feature extraction
         self.conv1 = nn.Conv1d(2, 16, kernel_size=7, padding=3)
@@ -203,5 +204,10 @@ class LSTMCNN(LSTMBasic):
             output = self.decode2(output)
         else:
             output = self.decode(output)
+        
+        # normalize output by dividing each freq vector with its L2 norm
+        # Note: normalizing for output power 
+        if self.normalize:
+            output = output / output.norm(dim=2).reshape(output.shape[0], output.shape[1], 1)
 
         return output, self.curr_state
