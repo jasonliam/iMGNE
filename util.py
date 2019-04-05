@@ -191,6 +191,8 @@ class DataGenerator:
             return x
             
         else:
+            
+            temp = temp.transpose()
   
             # reassemble real and imaginary parts of the output
             out = temp[:int(temp.shape[0]/2)] + 1j * temp[int(temp.shape[0]/2):]
