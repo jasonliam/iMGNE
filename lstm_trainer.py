@@ -164,7 +164,7 @@ class LSTMTrainer:
         self.m.load_state_dict(torch.load(model_path))
         self.epochs_trained = epochs_trained
 
-    def eval_model(self, primer_data_gen, silence_len=10, prime_len=10, gen_len=10):
+    def eval_model(self, primer_data_gen, silence_len=10, prime_len=10, gen_len=10, mode="free"):
         """ Generate some bangers
         """
 
@@ -181,7 +181,7 @@ class LSTMTrainer:
             eval_output = []
             hidden_states = []
             cell_states = []
-            
+
             # hold the input silent for a short period
             # this will yield the network's natural oscillation patterns
             silence = torch.zeros(X.shape).to(self.device)
@@ -191,20 +191,39 @@ class LSTMTrainer:
                 hidden_states += [states[0].cpu().numpy()]
                 cell_states += [states[1].cpu().numpy()]
 
-            # prime the model with some input
+            # get primed output
             primer = X[:prime_len].to(self.device)
             for i in range(prime_len):
                 out, states = self.m(primer[i:i+1], self.m.curr_state)
                 eval_output += [out.cpu().numpy()]
                 hidden_states += [states[0].cpu().numpy()]
                 cell_states += [states[1].cpu().numpy()]
+                    
+            if mode == "free":
 
-            # start generation 
-            for i in range(gen_len):
-                print("{}/{}".format(i+1, gen_len), end='\r')
-                out, states = self.m(out, self.m.curr_state)
-                eval_output += [out.cpu().numpy()]
-                hidden_states += [states[0].cpu().numpy()]
-                cell_states += [states[1].cpu().numpy()]
+                for i in range(gen_len):
+                    print("{}/{}".format(i+1, gen_len), end='\r')
+                    out, states = self.m(out, self.m.curr_state)
+                    eval_output += [out.cpu().numpy()]
+                    hidden_states += [states[0].cpu().numpy()]
+                    cell_states += [states[1].cpu().numpy()]
+                    
+            elif mode == "constrained":
+                
+                for i in range(gen_len):
+                    print("{}/{}".format(i+1, gen_len), end='\r')
+                    
+                    # prime model and generate one sample
+                    self.m.curr_state = self.m.init_hidden() # wipe model
+                    for j in range(len(primer)):
+                        out, states = self.m(primer[j:j+1], self.m.curr_state)
+                    primer = torch.cat((primer, out), dim=0)
+                    
+                    eval_output += [out.cpu().numpy()]
+                    hidden_states += [states[0].cpu().numpy()]
+                    cell_states += [states[1].cpu().numpy()]
+                
+            else:
+                raise Exception("Unknown eval mode")
                 
         return eval_output, hidden_states, cell_states
