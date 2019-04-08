@@ -116,12 +116,13 @@ class LSTMFC(LSTMBasic):
 # CNN feature extraction before LSTM
 class LSTMCNN(LSTMBasic):
 
-    def __init__(self, input_dim, hidden_dim, num_layers=1, batch_size=1, decoder="vanilla", normalize=False):
+    def __init__(self, input_dim, hidden_dim, num_layers=1, batch_size=1, decoder="vanilla", normalize=False, dropout_p=0.0):
         super(LSTMCNN, self).__init__(
             input_dim, hidden_dim, num_layers, batch_size)
 
         self.decoder = decoder
         self.normalize = normalize
+        self.dropout_p = dropout_p
 
         # CNN layers for feature extraction
         self.conv1 = nn.Conv1d(2, 16, kernel_size=7, padding=3)
@@ -163,6 +164,7 @@ class LSTMCNN(LSTMBasic):
             self.bn2_t = nn.BatchNorm1d(16)
         elif self.decoder == "2fc":
             self.decode1 = nn.Linear(hidden_dim, input_dim)
+            self.dropout = nn.Dropout(dropout_p)
             self.decode2 = nn.Linear(input_dim, input_dim)
 
     def forward(self, chunk, prev_state):
@@ -200,7 +202,8 @@ class LSTMCNN(LSTMBasic):
             # break out minibatches again
             output = output.view(chunk.shape[0], chunk.shape[1], -1)
         elif self.decoder == "2fc":
-            output = F.tanh(self.decode1(output))
+            output = torch.tanh(self.decode1(output))
+            output = self.dropout(output) 
             output = self.decode2(output)
         else:
             output = self.decode(output)

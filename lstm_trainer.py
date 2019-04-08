@@ -23,13 +23,14 @@ import torch
 import torchvision
 import torch.nn as nn
 import pickle
+import os
 from datetime import datetime
 
 
 class LSTMTrainer:
 
     def __init__(self, model, criterion, optimizer, device=None, 
-                 model_prefix=None, loss_prefix=None):
+                 session_name=""):
 
         # Set computing device, detect if not passed in
         if not device:
@@ -49,8 +50,8 @@ class LSTMTrainer:
 
         self.m = model.module if isinstance(model, nn.DataParallel) else model
         
-        self.model_prefix = model_prefix if model_prefix else ""
-        self.loss_prefix = loss_prefix if loss_prefix else ""
+        self.model_root = "models/" + session_name + ("/" if len(session_name) > 0 else "")
+        self.loss_root = "losses/" + session_name + ("/" if len(session_name) > 0 else "")
 
     def train(self, train_gen, val_gen, n_epochs, shuffle=True,
               dump_model=False, dump_epochs=50, dump_loss=False):
@@ -147,13 +148,17 @@ class LSTMTrainer:
 
             # dump model
             if dump_model and self.epochs_trained % dump_epochs == 0:
-                model_file = "models/{}cs{}_h{}_e{}.ckpt".format(self.model_prefix, 
+                if not os.path.exists(self.model_root):
+                    os.makedirs(self.model_root)
+                model_file = self.model_root + "cs{}_h{}_e{}.ckpt".format( 
                     train_gen.chunk_size, self.m.hidden_dim, self.epochs_trained)
                 torch.save(self.m.state_dict(), model_file)
 
             # dump loss on every epoch
             if dump_loss:
-                losses_file = "losses/{}cs{}_h{}_e{}.loss.pkl".format(self.loss_prefix, 
+                if not os.path.exists(self.loss_root):
+                    os.makedirs(self.loss_root)
+                losses_file = self.loss_root + "cs{}_h{}_e{}.loss.pkl".format(
                     train_gen.chunk_size, self.m.hidden_dim, self.epochs_trained)
                 pickle.dump((epoch_train_loss, epoch_val_loss),
                             open(losses_file, 'wb'))
